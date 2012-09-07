@@ -50,6 +50,7 @@ rb_red_blk_tree* RBTreeCreate(int(*CompFunc)(const void*, const void*),
 	temp->red = 0;
 
 	newTree->min = newTree->nil; /* cache the min for fast access */
+	newTree->tree_size = 0;
 	return (newTree);
 }
 
@@ -302,6 +303,8 @@ rb_red_blk_node * RBTreeInsert(rb_red_blk_tree* tree, rb_red_blk_node *x)
 	Assert(!tree->nil->red, "nil not red in RBTreeInsert");
 	Assert(!tree->root->red, "root not red in RBTreeInsert");
 #endif
+
+	tree->tree_size++;
 
 	return (newNode);
 }

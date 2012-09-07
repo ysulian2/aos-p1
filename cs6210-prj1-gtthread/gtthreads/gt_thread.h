@@ -39,7 +39,7 @@ typedef struct uthread_attr uthread_attr_t;
 uthread_attr_t *uthread_attr_create(void);
 void uthread_attr_destroy(uthread_attr_t *attr);
 /* Initializes attribute to the defaults */
-void uthread_attr_init(uthread_attr_t *attr);
+void uthread_attr_init(uthread_attr_t *attr, int gid);
 
 /* Scheduling parameters. Either or both can be set to their defaults,
  * UTHREAD_ATTR_PRIORITY_DEFAULT and UTHREAD_ATTR_GROUP_DEFAULT, respectively */

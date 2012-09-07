@@ -20,6 +20,7 @@
 #define CFS_DEFAULT_PRIORITY 20
 #define CFS_DEFAULT_LATENCY_us 40000 /* 40 ms */
 #define CFS_MIN_GRANULARITY_us 20000 /* 20 ms */
+#define CFS_DEFAULT_WEIGHT 100
 
 /* global singleton scheduler */
 extern scheduler_t scheduler;
@@ -31,6 +32,8 @@ typedef struct cfs_uthread {
 	struct uthread *uthread;
 	long unsigned vruntime;
 	unsigned priority;
+        int weight;
+        int gid;
 	long unsigned key; // key for rb tree, set to vruntime - min_vruntime
 	rb_red_blk_node *node;
 } cfs_uthread_t;
@@ -203,6 +206,8 @@ static kthread_t *cfs_uthread_init(uthread_t *uthread)
 	cfs_uthread_t *cfs_uthread = emalloc(sizeof(*cfs_uthread));
 	cfs_uthread->uthread = uthread;
 	cfs_uthread->priority = CFS_DEFAULT_PRIORITY;
+	cfs_uthread->weight = CFS_DEFAULT_WEIGHT;
+	cfs_uthread->gid = uthread->attr->gid;
 	gt_spin_lock(&cfs_data->lock);
 	cfs_kthread_t *cfs_kthread = cfs_find_kthread_target(cfs_uthread,
 	                                                     cfs_data);
@@ -312,4 +317,45 @@ void cfs_init(scheduler_t *scheduler, int lwp_count)
 
 	scheduler->data.buf = cfs_create_sched_data(lwp_count);
 	scheduler->data.destroy = &cfs_destroy_sched_data;
+}
+
+int cfs_update_weight(rb_red_blk_tree* tree, rb_red_blk_node* node, int group_id, int index, rb_red_blk_node** group)
+{
+  int new_index = index;
+
+
+  if(node != tree->nil) {
+    new_index = cfs_update_weight(tree, node->left, group_id, index, group);
+    cfs_uthread_t* curr = node->info;
+    if (curr->gid == group_id) {
+      group[new_index] = node;
+      new_index++;
+    }
+    new_index = cfs_update_weight(tree, node->right, group_id, new_index, group);
+
+  }
+
+  return new_index;
+}
+
+void cfs_update_group_weight(rb_red_blk_tree* tree, int group_id)
+{
+  rb_red_blk_node* group[100];
+  int i = 0;
+
+  int groupSize = cfs_update_weight(tree, tree->root, group_id, i, group);
+
+  if(groupSize > 0){
+    for(i = 0; i < groupSize; i++){
+      //remove from rbtree
+      rb_red_blk_node* node;
+      node = RBDelete(tree, group[i]);
+      //update weight
+      cfs_uthread_t* ut = node->info;
+      ut->weight = CFS_DEFAULT_WEIGHT/(groupSize+1);// +1 to include the new thread
+      //insert to rbtree
+      rb_red_blk_node* newNode;
+      newNode = RBTreeInsert(tree, node);
+   }
+  }
 }

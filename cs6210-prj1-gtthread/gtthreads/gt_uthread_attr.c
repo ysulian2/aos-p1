@@ -10,7 +10,7 @@
 #include "gt_uthread.h"
 #include "gt_kthread.h"
 #include "gt_common.h"
-
+#include "gt_typedefs.h"
 
 void uthread_attr_getcputime(uthread_attr_t *attr, struct timeval *tv)
 {
@@ -32,10 +32,11 @@ void uthread_attr_setschedparam(uthread_attr_t *attr,
 	attr->group_id = param->group_id;
 }
 
-void uthread_attr_init(uthread_attr_t *attr)
+void uthread_attr_init(uthread_attr_t *attr, int gid)
 {
 	attr->priority = UTHREAD_ATTR_PRIORITY_DEFAULT;
 	attr->group_id = UTHREAD_ATTR_GROUP_DEFAULT;
+	attr->gid = gid;
 	attr->execution_time.tv_sec = 0;
 	attr->execution_time.tv_usec = 0;
 	attr->timeslice_start = attr->execution_time;

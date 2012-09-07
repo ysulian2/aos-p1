@@ -156,7 +156,7 @@ int main(int argc, char **argv)
 			thread_arg->b = matrix_create(matrix_sizes[i], val);
 			thread_arg->c = matrix_create(matrix_sizes[i], val);
 			thread_arg->attr = uthread_attr_create();
-			uthread_attr_init(thread_arg->attr);
+			uthread_attr_init(thread_arg->attr, 0);
 			thread_arg++;
 		}
 	}

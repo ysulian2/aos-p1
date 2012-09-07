@@ -20,6 +20,7 @@
 struct uthread_attr {
 	int priority;
 	uthread_gid group_id;
+	int gid;
 	struct timeval execution_time;
 	struct timeval timeslice_start; // last time of day, used for bookkeeping
 };

@@ -62,7 +62,7 @@ static void _gtthread_app_init(gtthread_options_t *options)
 {
 	/* Num of logical processors (cpus/cores) */
 	if (options->lwp_count < 1) {
-		options->lwp_count = (int) sysconf(_SC_NPROCESSORS_CONF);
+	  options->lwp_count = 1;//(int) sysconf(_SC_NPROCESSORS_CONF);
 	}
 	scheduler_init(&scheduler, options->scheduler_type, options->lwp_count);
 
