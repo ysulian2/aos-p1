@@ -8,9 +8,9 @@
 
 /* comment this out to make the application single threaded */
 #define USE_GTTHREADS
-#define THREAD_COUNT 128
+#define THREAD_COUNT 16//128
 const int matrix_sizes[] = {
-	64, 128, 256, 512
+  16//64, 128, 256, 512
         };
 
 typedef struct square_matrix {
