@@ -51,6 +51,13 @@ rb_red_blk_tree* RBTreeCreate(int(*CompFunc)(const void*, const void*),
 
 	newTree->min = newTree->nil; /* cache the min for fast access */
 	newTree->tree_size = 0;
+	newTree->max_gid = -1;
+	
+	/**
+	for(int i = 0; i < 100; i++){
+	  newTree->gid_list = 0;
+	  }*/
+
 	return (newTree);
 }
 

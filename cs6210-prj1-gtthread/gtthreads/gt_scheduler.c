@@ -30,6 +30,7 @@ void schedule(void)
 		checkpoint("k%d: NULL next_uthread", k_ctx->cpuid);
 		checkpoint("k%d: Setting state to DONE, wait for more uthreads",
 			   k_ctx->cpuid);
+		printf("kthread state DONE\n");
 		k_ctx->state = KTHREAD_DONE;
 		kthread_wait_for_uthread(k_ctx);
 		return;

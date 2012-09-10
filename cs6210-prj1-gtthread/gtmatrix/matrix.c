@@ -8,9 +8,11 @@
 
 /* comment this out to make the application single threaded */
 #define USE_GTTHREADS
+#define CFS_MODE 0
+#define PFS_MODE 1
 #define THREAD_COUNT 16//128
 const int matrix_sizes[] = {
-  16//64, 128, 256, 512
+  256, 256//64, 128, 256, 512
         };
 
 typedef struct square_matrix {
@@ -144,11 +146,26 @@ static int mulmat(void *arg_)
 
 int main(int argc, char **argv)
 {
-	uthread_arg_t thread_args[THREAD_COUNT];
+  
+        if(argc < 4){
+	  printf("matrix [normal threads] [greedy threads] [0-cfs, 1-pfs]\n");
+	  return 0;
+	}
+
+        int numNormal = atoi(argv[1]);
+	int numGreedy = atoi(argv[2]);
+	int mode = atoi(argv[3]);
+	
+	printf("No Normal %d No Greedy %d\n", numNormal, numGreedy);
+	int totalThread = numNormal+numGreedy;
+	uthread_arg_t thread_args[totalThread];
 
 	uthread_arg_t *thread_arg = thread_args;
 	int matrix_sizes_count = sizeof(matrix_sizes) / sizeof(matrix_sizes[0]);
-	int threads_per_matrix_size = THREAD_COUNT / matrix_sizes_count;
+	int threads_per_matrix_size = totalThread / matrix_sizes_count;
+	//printf("matrix size count: %d threads per matrix size: %d\n", matrix_sizes_count, threads_per_matrix_size);
+	int gid = 0;
+	/**
 	for (int i = 0; i < matrix_sizes_count; ++i) {
 		for (int j = 0; j < threads_per_matrix_size; ++j) {
 			int val = i * 100 + j;
@@ -156,15 +173,45 @@ int main(int argc, char **argv)
 			thread_arg->b = matrix_create(matrix_sizes[i], val);
 			thread_arg->c = matrix_create(matrix_sizes[i], val);
 			thread_arg->attr = uthread_attr_create();
-			uthread_attr_init(thread_arg->attr, 0);
+			uthread_attr_init(thread_arg->attr, gid);
 			thread_arg++;
 		}
+		gid++;
+	}
+	*/
+
+	for (int j = 0; j < numNormal; ++j) {
+	        int val = gid * 100 + j;
+		thread_arg->a = matrix_create(matrix_sizes[gid], val);
+		thread_arg->b = matrix_create(matrix_sizes[gid], val);
+		thread_arg->c = matrix_create(matrix_sizes[gid], val);
+		thread_arg->attr = uthread_attr_create();
+		uthread_attr_init(thread_arg->attr, gid);
+		//printf("group id %d\n", (int)uthread_attr_getgid(thread_arg->attr));
+		thread_arg++;
+	}
+
+	gid++;
+
+	for (int j = 0; j < numGreedy; ++j) {
+	        int val = gid * 100 + j;
+		thread_arg->a = matrix_create(matrix_sizes[gid], val);
+		thread_arg->b = matrix_create(matrix_sizes[gid], val);
+		thread_arg->c = matrix_create(matrix_sizes[gid], val);
+		thread_arg->attr = uthread_attr_create();
+		uthread_attr_init(thread_arg->attr, gid);
+		thread_arg++;
 	}
 
 #ifdef USE_GTTHREADS
 	gtthread_options_t opt;
 	gtthread_options_init(&opt);
-	opt.scheduler_type = SCHEDULER_CFS;	// completely fair
+	if(mode == CFS_MODE){
+	  opt.scheduler_type = SCHEDULER_CFS;	// completely fair
+	}
+	else {
+	  opt.scheduler_type = SCHEDULER_PFS;     // group cfs
+	}
 //	opt.scheduler_type = SCHEDULER_PCS;	// priority
 	/* opt.lwp_count = 1; */
 	gtthread_app_init(&opt);
@@ -172,7 +219,7 @@ int main(int argc, char **argv)
 
 	struct timeval app_start_time, app_end_time, app_elapsed_time;
 	gettimeofday(&app_start_time, NULL);
-	for (int i = 0; i < THREAD_COUNT; ++i) {
+	for (int i = 0; i < totalThread; ++i) {
 		gettimeofday(&thread_args[i].create_time, NULL);
 
 #ifdef USE_GTTHREADS
@@ -203,27 +250,52 @@ int main(int argc, char **argv)
 	printf("Total application elapsed time: %s s\n", time_str);
 
 	/* all times in microseconds */
-	unsigned long thread_cpu_times[THREAD_COUNT];
-	unsigned long thread_elapsed_times[THREAD_COUNT];
+	unsigned long thread_cpu_times[totalThread];
+	unsigned long thread_elapsed_times[totalThread];
 	unsigned long means_cpu[matrix_sizes_count];
 	unsigned long means_elapsed[matrix_sizes_count];
 	unsigned long std_dev_cpu[matrix_sizes_count];
 	unsigned long std_dev_elapsed[matrix_sizes_count];
+	unsigned long group_cpu_time[matrix_sizes_count];
 
+	for(int i = 0; i < matrix_sizes_count; i++) {
+	        group_cpu_time[i] = 0;
+	}
+
+	/**
+	for(int t = 0; t<totalThread; t++){
+	  thread_arg = &thread_args[t];
+	  int id = uthread_attr_getgid(thread_arg->attr);
+	  printf("Group %d, start time %lu, end time %lu\n", id, tv2us(&thread_arg->start_time), tv2us(&thread_arg->end_time));
+	}
+	*/
+
+	int tcount = 0;
 	struct timeval thread_cpu_time, thread_elapsed_time;
 	for (int i = 0; i < matrix_sizes_count; ++i) {
 		means_cpu[i] = 0;
 		means_elapsed[i] = 0;
 		std_dev_cpu[i] = 0;
 		std_dev_elapsed[i] = 0;
+		if (i == 0){
+		  threads_per_matrix_size = numNormal;
+		}
+		else {
+		  threads_per_matrix_size = numGreedy;
+		}
+		//printf("threads per matrix size %d \n", threads_per_matrix_size);
 		for (int j = 0; j < threads_per_matrix_size; ++j) {
-			int t = i * threads_per_matrix_size + j;
+		        int t = tcount;//i * threads_per_matrix_size + j;
+			tcount++;
 			thread_arg = &thread_args[t];
 
 			/* Wall time as seen by the thread being scheduled */
 			timeval_subtract(&thread_elapsed_time,
 			                 &thread_arg->end_time,
 			                 &thread_arg->start_time);
+
+			int id = uthread_attr_getgid(thread_arg->attr);
+			//printf("Group %d, start time %lu, end time %lu\n", id, tv2us(&thread_arg->start_time), tv2us(&thread_arg->end_time));
 
 #ifdef USE_GTTHREADS
 			/* CPU time as calculated by gtthreads */
@@ -240,10 +312,16 @@ int main(int argc, char **argv)
 			thread_elapsed_times[t] = tv2us(&thread_elapsed_time);
 			means_elapsed[i] += thread_elapsed_times[t];
 
-			printf("Thread %3d CPU time: %lu us, elapsed time: %lu us\n",
+			//printf("group id %d\n ", uthread_attr_getgid(thread_arg->attr));
+			
+			group_cpu_time[id] += thread_cpu_times[t];
+			
+			printf("Thread %3d CPU time: %lu us, elapsed time: %lu us, total group%d: %lu us\n",
 			       thread_args[t].tid,
 			       tv2us(&thread_cpu_time),
-			       tv2us(&thread_elapsed_time));
+			       tv2us(&thread_elapsed_time),
+			       id,
+			       group_cpu_time[id] );
 		}
 	}
 
@@ -268,10 +346,11 @@ int main(int argc, char **argv)
 	}
 
 	int field_width = 24;
-	printf("%-*s" "%-*s" "%-*s" "\n",
+	printf("%-*s" "%-*s" "%-*s" "%-*s" "\n",
 	       field_width, "Matrix Size",
 	       field_width, "CPU Time",
-	       field_width, "Elapsed Time"
+	       field_width, "Elapsed Time",
+	       field_width, "Total Time"
 	       );
 	printf("%-*s" "%-*s" "%-*s" "\n",
 	       field_width, " ",
@@ -287,6 +366,9 @@ int main(int argc, char **argv)
 		printf("%-*s", field_width, data);
 
 		sprintf(data, "%lu (%lu)", means_elapsed[i], std_dev_elapsed[i]);
+		printf("%-*s", field_width, data);
+		
+		sprintf(data, "%lu", group_cpu_time[i]);
 		printf("%-*s\n", field_width, data);
 	}
 }

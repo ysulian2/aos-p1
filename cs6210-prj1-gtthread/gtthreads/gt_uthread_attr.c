@@ -37,9 +37,15 @@ void uthread_attr_init(uthread_attr_t *attr, int gid)
 	attr->priority = UTHREAD_ATTR_PRIORITY_DEFAULT;
 	attr->group_id = UTHREAD_ATTR_GROUP_DEFAULT;
 	attr->gid = gid;
+	//printf("gid %d\n", attr->gid);
 	attr->execution_time.tv_sec = 0;
 	attr->execution_time.tv_usec = 0;
 	attr->timeslice_start = attr->execution_time;
+}
+
+int uthread_attr_getgid(uthread_attr_t *attr)
+{
+        return attr->gid;
 }
 
 uthread_attr_t *uthread_attr_create()

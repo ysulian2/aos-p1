@@ -54,6 +54,8 @@ typedef struct rb_red_blk_tree {
   rb_red_blk_node* nil;              
   rb_red_blk_node* min;
   int tree_size;
+  int max_gid;
+  int gid_list[100];
 } rb_red_blk_tree;
 
 rb_red_blk_tree* RBTreeCreate(int  (*CompFunc)(const void*, const void*),

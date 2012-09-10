@@ -20,7 +20,6 @@
 #define CFS_DEFAULT_PRIORITY 20
 #define CFS_DEFAULT_LATENCY_us 40000 /* 40 ms */
 #define CFS_MIN_GRANULARITY_us 20000 /* 20 ms */
-#define CFS_DEFAULT_WEIGHT 100
 
 /* global singleton scheduler */
 extern scheduler_t scheduler;
@@ -32,7 +31,6 @@ typedef struct cfs_uthread {
 	struct uthread *uthread;
 	long unsigned vruntime;
 	unsigned priority;
-        int weight;
         int gid;
 	long unsigned key; // key for rb tree, set to vruntime - min_vruntime
 	rb_red_blk_node *node;
@@ -77,50 +75,35 @@ static inline void cfs_us2tv(unsigned long us, struct timeval *tv)
 	tv->tv_usec = us % 1000000;
 }
 
-int cfs_update_weight(rb_red_blk_tree* tree, rb_red_blk_node* node, int group_id, int index, rb_red_blk_node** group)
+void cfs_check_group_active_helper(rb_red_blk_tree* tree, rb_red_blk_node* node, int* checkList)
 {
-
-  int new_index = index;
-  //printf("index = %d\n", new_index);
-
-  if(node != tree->nil) {
-    new_index = cfs_update_weight(tree, node->left, group_id, index, group);
-    cfs_uthread_t* curr = node->info;
-    if (curr->gid == group_id) {
-      group[new_index] = node;
-      new_index++;
-    }
-
-    new_index = cfs_update_weight(tree, node->right, group_id, new_index, group);
-    
+  if(node!= tree->nil){
+    cfs_check_group_active_helper(tree, node->left, checkList);
+    cfs_uthread_t* ut = node->info;
+    checkList[ut->gid] = 1;
+    cfs_check_group_active_helper(tree, node->right, checkList);
   }
-  //printf("new index = %d\n", new_index);
-  return new_index;
+
 }
 
-int cfs_update_group_weight(rb_red_blk_tree* tree, int group_id)
+int cfs_check_group_active(rb_red_blk_tree* tree)
 {
-  rb_red_blk_node* group[100];
-  int i = 0;
-
-  int groupSize = cfs_update_weight(tree, tree->root->left, group_id, i, group);
-
-  if(groupSize > 0){
-    for(i = 0; i < groupSize; i++){
-      //      printf("updating %d\n", i);
-      //remove from rbtree
-      rb_red_blk_node* node;
-      node = RBDelete(tree, group[i]);
-      //update weight
-      cfs_uthread_t* ut = node->info;
-      ut->weight = (int)CFS_DEFAULT_WEIGHT/(groupSize+1);// +1 to include the new thread
-      //insert to rbtree
-      rb_red_blk_node* newNode;
-      newNode = RBTreeInsert(tree, node);
-   }
+  int max = tree->max_gid;
+  int checkList[max];
+  for(int i = 0; i < max; i++){
+    checkList[i] = 0;
   }
-
-  return groupSize;
+  //printf("max gid %d\n", max);
+  cfs_check_group_active_helper(tree, tree->root->left, checkList);
+  
+  for(int i = 0; i < max; i++){
+    if(checkList[i] == 0){
+      printf("%d not active!\n", i);
+      return -1;
+    }
+  }
+  
+  return 0;
 }
 
 /* calculates the timeslice from vruntime and the load on the cpu */
@@ -128,11 +111,8 @@ static void cfs_calculate_timeslice(cfs_kthread_t *cfs_kthread,
                                     struct timeval *timeslice)
 {
 	cfs_uthread_t *cfs_uthread = cfs_kthread->current_cfs_uthread;
-	/*	unsigned long timeslice_us = cfs_kthread->latency
-	        * (cfs_uthread->priority / cfs_kthread->load);
-	*/
 	unsigned long timeslice_us = cfs_kthread->latency
-	  *(cfs_uthread->weight / cfs_kthread->load);
+	        * (cfs_uthread->priority / cfs_kthread->load);
 	cfs_us2tv(timeslice_us, timeslice);
 }
 
@@ -165,6 +145,12 @@ uthread_t *cfs_pick_next_uthread(kthread_t *k_ctx)
 
 	cfs_kthread_t *cfs_kthread = cfs_get_kthread(k_ctx);
 	assert(cfs_kthread != NULL);
+
+	int flag = cfs_check_group_active(cfs_kthread->tree);
+	if(flag == -1){
+	  return NULL;
+	}
+
 	gt_spin_lock(&cfs_kthread->lock);
 	rb_red_blk_node *min = RBDeleteMin(cfs_kthread->tree);
 	assert(min != cfs_kthread->tree->nil);
@@ -189,7 +175,7 @@ static void cfs_update_vruntime(cfs_uthread_t *cfs_uthread)
 {
 	struct timeval *cputime = &cfs_uthread->uthread->attr->execution_time;
 	unsigned long cputime_us = cfs_tv2us(cputime);
-	cfs_uthread->vruntime += cputime_us * cfs_uthread->weight;//priority;
+	cfs_uthread->vruntime += cputime_us * cfs_uthread->priority;
 }
 
 uthread_t *cfs_preemt_current_uthread(kthread_t *k_ctx)
@@ -204,7 +190,7 @@ uthread_t *cfs_preemt_current_uthread(kthread_t *k_ctx)
 
 	if (cur_uthread->state == UTHREAD_DONE) {
 		checkpoint("u%d: CFS: uthread done", cur_uthread->tid);
-		cfs_kthread->load -= cfs_cur_uthread->weight;//priority;
+		cfs_kthread->load -= cfs_cur_uthread->priority;
 		// FIXME free the node and the uthread?
 		return NULL;
 	}
@@ -255,7 +241,6 @@ static kthread_t *cfs_uthread_init(uthread_t *uthread)
 	cfs_uthread_t *cfs_uthread = emalloc(sizeof(*cfs_uthread));
 	cfs_uthread->uthread = uthread;
 	cfs_uthread->priority = CFS_DEFAULT_PRIORITY;
-	cfs_uthread->weight = CFS_DEFAULT_WEIGHT;
 	cfs_uthread->gid = uthread->attr->gid;
 
 	gt_spin_lock(&cfs_data->lock);
@@ -263,11 +248,9 @@ static kthread_t *cfs_uthread_init(uthread_t *uthread)
 	                                                     cfs_data);
 	gt_spin_unlock(&cfs_data->lock);
 
-	printf("start update group %d\n", cfs_uthread->gid);
-	//update weight
-	int groupSize = cfs_update_group_weight(cfs_kthread->tree, cfs_uthread->gid);
-	cfs_uthread->weight = (int)CFS_DEFAULT_WEIGHT/(groupSize+1);
-
+	if(cfs_uthread->gid > cfs_kthread->tree->max_gid){
+	  cfs_kthread->tree->max_gid = cfs_uthread->gid;
+	}
 
 	/* update the kthread's load and latency, if necessary */
 	gt_spin_lock(&cfs_kthread->lock);
@@ -275,7 +258,7 @@ static kthread_t *cfs_uthread_init(uthread_t *uthread)
 	cfs_kthread->latency =
 	        max(CFS_DEFAULT_LATENCY_us,
 	            cfs_kthread->cfs_uthread_count * CFS_MIN_GRANULARITY_us);
-	cfs_kthread->load += cfs_uthread->weight;//priority;
+	cfs_kthread->load += cfs_uthread->priority;
 	cfs_uthread->vruntime = cfs_kthread->min_vruntime;
 	cfs_uthread->key = 0;
 	gt_spin_unlock(&cfs_kthread->lock);
@@ -374,5 +357,3 @@ void cfs_init(scheduler_t *scheduler, int lwp_count)
 	scheduler->data.buf = cfs_create_sched_data(lwp_count);
 	scheduler->data.destroy = &cfs_destroy_sched_data;
 }
-
-

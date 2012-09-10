@@ -12,7 +12,7 @@
 /* includes for each scheduler */
 #include "gt_scheduler_pcs.h"
 #include "gt_scheduler_cfs.h"
-
+#include "gt_scheduler_pfs.h"
 
 void scheduler_switch(scheduler_t *scheduler, scheduler_type_t sched_type,
                       int lwp_count)
@@ -24,6 +24,9 @@ void scheduler_switch(scheduler_t *scheduler, scheduler_type_t sched_type,
 		break;
 	case SCHEDULER_CFS:
 		cfs_init(scheduler, lwp_count);
+		break;
+	case SCHEDULER_PFS:
+	        pfs_init(scheduler, lwp_count);
 		break;
 	}
 }

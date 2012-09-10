@@ -15,7 +15,8 @@ struct timeval;
 typedef enum scheduler_type {
 	SCHEDULER_DEFAULT,
 	SCHEDULER_PCS, /* priority co-scheduler */
-	SCHEDULER_CFS /* completely fair scheduler */
+	SCHEDULER_CFS, /* completely fair scheduler */
+	SCHEDULER_PFS
 } scheduler_type_t;
 
 typedef struct gtthread_options {
